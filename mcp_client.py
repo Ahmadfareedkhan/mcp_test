@@ -5,7 +5,7 @@ import logging
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-from llm_utils import generate_command_with_ollama
+from llm_utils import generate_command_with_groq
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
@@ -19,7 +19,7 @@ async def main():
     logger.info(f"[Client] User query: {user_query}")
 
     # 1) Use the local LLM (Ollama) to generate a shell command
-    generated_cmd = generate_command_with_ollama(user_query)
+    generated_cmd = generate_command_with_groq(user_query)
     logger.info(f"[Client] LLM suggested command: {generated_cmd}")
 
     # 2) Connect to the MCP server (which should be run in a separate terminal)

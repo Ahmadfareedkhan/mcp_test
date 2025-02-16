@@ -1,58 +1,55 @@
-import requests
-import json
+import os
+import groq
 import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Default Ollama endpoint
-OLLAMA_URL = "http://localhost:11434/api/generate"
+# Initialize Groq client - make sure to set GROQ_API_KEY environment variable
+client = groq.Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-def generate_command_with_ollama(user_query: str) -> str:
+def generate_command_with_groq(user_query: str) -> str:
+    """
+    Sends the user query to Groq LLM instance and returns a recommended system command string.
+    """
     system_prompt = (
-        "You are a command-line assistant. Output ONLY the exact command to run, nothing else.\n"
-        "- For Windows, use: tasklist /FO TABLE\n"
-        "- For Linux, use: ps aux --sort=-%cpu | head -n 11\n"
-        f"Request: {user_query}\n"
-        "Command (respond with ONLY the command):"
+        """You are a highly skilled Windows Command-Line Assistant. Your sole task is to translate a user's natural language request into the exact Windows command that fulfills the request, using PowerShell syntax where applicable. Do not include any explanation, commentary, or additional text—only output the single, complete command.
+
+            For example:
+            - If the request is "list the top CPU processes", your response should be:
+            powershell /c "Get-Process | Sort-Object CPU -Descending | Select-Object -First 10"
+            - If the request is "show free disk space on all drives", your response should be:
+            powershell /c "Get-PSDrive | Select-Object Name, Free, Used, @{Name='Total';Expression={$_.Used + $_.Free}}"
+
+            Now, given the following request:
+            {user_query}
+
+            Output only the command that directly satisfies this request.
+            """
     )
 
-    payload = {
-        "model": "deepseek-r1:1.5b",
-        "prompt": system_prompt,
-        "temperature": 0.1,
-        "stop": ["\n", "```"]
-    }
-
     try:
-        resp = requests.post(OLLAMA_URL, json=payload, timeout=60, stream=True)
-        resp.raise_for_status()
+        # Call Groq API
+        completion = client.chat.completions.create(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_query}
+            ],
+            model="llama3-8b-8192",  # or another Groq model
+            temperature=0.1,
+            max_tokens=100
+        )
         
-        generated_chunks = []
-        for line in resp.iter_lines(decode_unicode=True):
-            if not line or not line.strip():
-                continue
-            try:
-                data = json.loads(line)
-                if data.get("done"):
-                    break
-                chunk = data.get("response", "")
-                generated_chunks.append(chunk)
-            except json.JSONDecodeError:
-                continue
-
-        command = "".join(generated_chunks).strip()
+        # Extract the command from response
+        command = completion.choices[0].message.content.strip()
+        
+        # Clean up any markdown formatting
         command = command.replace("```", "").replace("`", "")
+        logger.info(f"Groq generated command: {command}")
         
-        if command.startswith("Okay") or command.startswith("Let") or "<think>" in command:
-            logger.info("Got explanation instead of command, using fallback")
-            return "tasklist /FO TABLE"
-            
-        if not command:
-            logger.info("Empty command response, using fallback")
-            return "tasklist /FO TABLE"
-            
         return command
 
     except Exception as e:
-        logger.error(f"Ollama request failed: {e}")
-        return "tasklist /FO TABLE"
+        logger.error(f"Groq API request failed: {e}")
+        # Return a fallback command for Windows
+        return 'powershell /c "Get-Process | Sort-Object CPU -Descending | Select-Object -First 10"'
