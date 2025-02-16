@@ -182,14 +182,3 @@ npx @modelcontextprotocol/inspector
 - [MCP Specification](https://spec.modelcontextprotocol.io)
 - [Protocol Architecture](https://modelcontextprotocol.io/docs/concepts/architecture)
 
-## Contributing
-
-Feel free to submit issues and pull requests for:
-- New features
-- Bug fixes
-- Documentation improvements
-- Test cases
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
