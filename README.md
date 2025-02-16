@@ -97,13 +97,3 @@ Please refer to the [Technical Documentation](docs/TECHNICAL.md).
 - All operations are logged
 - Execution timeouts are enforced
 
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch
-3. Make your changes
-4. Submit a pull request
-
-## License
-
-MIT License - see LICENSE file for details.
