@@ -1,47 +1,55 @@
-from datetime import datetime
-from mcp_server import process_mcp_message
+import asyncio
+import sys
+import logging
 
-def current_timestamp():
-    """Return the current UTC timestamp in ISO format."""
-    return datetime.utcnow().isoformat()
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
 
-def format_query(user_query):
-    """
-    Format the user query into an MCP-compliant JSON message.
-    """
-    mcp_message = {
-        "type": "query",
-        "sender": "MCP_Client",
-        "payload": {"query": user_query},
-        "timestamp": current_timestamp()
-    }
-    return mcp_message
+from llm_utils import generate_command_with_ollama
 
-def send_query_to_server(mcp_message):
-    """
-    Simulate sending the MCP message to the server.
-    In a production system, this could involve network communication.
-    Here, we directly call the server function.
-    """
-    return process_mcp_message(mcp_message)
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
-def display_result(response_message):
-    """
-    Display the server's response to the user.
-    """
-    if response_message.get("type") == "response":
-        print("Execution Result:")
-        print(response_message["payload"]["result"])
-        print("Command executed:", response_message["payload"]["command"])
-    elif response_message.get("type") == "error":
-        print("An error occurred:")
-        print(response_message["payload"]["error"])
+async def main():
+    if len(sys.argv) < 2:
+        print("Usage: python mcp_client.py \"<Your question here>\"")
+        sys.exit(1)
 
-def main():
-    user_query = input("Enter your command query (e.g., 'list files', 'current directory', 'disk usage'): ")
-    client_message = format_query(user_query)
-    response = send_query_to_server(client_message)
-    display_result(response)
+    user_query = sys.argv[1]
+    logger.info(f"[Client] User query: {user_query}")
+
+    # 1) Use the local LLM (Ollama) to generate a shell command
+    generated_cmd = generate_command_with_ollama(user_query)
+    logger.info(f"[Client] LLM suggested command: {generated_cmd}")
+
+    # 2) Connect to the MCP server (which should be run in a separate terminal)
+    #    Alternatively, we can let the client spawn the server by specifying
+    #    the 'command' + 'args' for the local process.
+    #    For example, to automatically spawn the server:
+    server_params = StdioServerParameters(
+        command="python",
+        args=["mcp_server.py"]
+    )
+
+    async with stdio_client(server_params) as (read_stream, write_stream):
+        async with ClientSession(read_stream, write_stream) as session:
+            await session.initialize()
+            # Now we can call the 'execute_command' tool on the server
+            logger.info("[Client] Calling 'execute_command' on the server ...")
+            tool_result = await session.call_tool(
+                "execute_command",
+                {"command": generated_cmd}
+            )
+
+            # The 'tool_result' is of type ToolResult, with a 'content' list
+            if not tool_result.content:
+                print("[Client] No content returned from server.")
+                return
+            # Typically we have a list of content items, each might be text
+            result_text = tool_result.content[0].text
+            logger.info("[Client] Received server result:\n" + result_text)
+            print("\n=== MCP Server Execution Result ===")
+            print(result_text)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

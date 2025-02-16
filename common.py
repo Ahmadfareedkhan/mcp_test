@@ -30,21 +30,6 @@ def validate_command(command):
             raise ValueError(f"Unsafe command detected: {command}")
     return True
 
-def generate_command_from_query(query):
-    """
-    Simulate an Ollama-based LLM: generate a system command from the given query.
-    In a production scenario, replace this logic with an actual call to the Ollama SDK.
-    """
-    if "list files" in query.lower():
-        return "ls -l"
-    elif "current directory" in query.lower():
-        return "pwd"
-    elif "disk usage" in query.lower():
-        return "df -h"
-    else:
-        # Safe default command if no known keyword is found.
-        return "echo 'Command not recognized; executing safe default.'"
-
 def execute_system_command(command):
     """
     Execute the validated system command securely using subprocess.

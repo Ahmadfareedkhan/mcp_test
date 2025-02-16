@@ -1,49 +1,51 @@
-from common import current_timestamp, log_interaction, validate_command, generate_command_from_query, execute_system_command
+import subprocess
+import shlex
+import logging
 
-def process_mcp_message(mcp_message):
+import mcp.types as types
+from mcp.server.fastmcp import FastMCP
+
+# Create a logger
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)  # or DEBUG, etc.
+
+# Create the MCP server instance
+mcp = FastMCP("LLMCommandExecutionServer")
+
+DISALLOWED_TOKENS = ["rm", "shutdown", "reboot", "mkfs", "dd"]
+
+@mcp.tool()
+def execute_command(command: str) -> str:
     """
-    Process an incoming MCP message:
-      - Extracts the user query.
-      - Uses the simulated LLM to generate a system command.
-      - Validates and executes the command.
-      - Returns an MCP-compliant response message.
+    Executes a shell command and returns stdout + stderr.
+    We do minimal checks so we don't run obviously harmful commands.
+
+    Returns a text containing either the command output or
+    an error message if blocked or if an error occurs.
     """
+    logger.info(f"[Server] Requested to execute command: {command}")
+
+    # Very basic "security" measure: check tokens
+    tokens = shlex.split(command)
+    for t in tokens:
+        if t in DISALLOWED_TOKENS:
+            logger.warning(f"Blocked token '{t}' in command.")
+            return f"[SECURITY BLOCKED] The token '{t}' is disallowed."
+
     try:
-        query = mcp_message.get("payload", {}).get("query", "")
-        if not query:
-            raise ValueError("Empty query received.")
-        
-        # Generate command using simulated LLM logic
-        command = generate_command_from_query(query)
-        # Validate the command to prevent dangerous operations
-        validate_command(command)
-        # Execute the command securely
-        execution_result = execute_system_command(command)
-        
-        response_message = {
-            "type": "response",
-            "sender": "MCP_Server",
-            "payload": {"result": execution_result, "command": command},
-            "timestamp": current_timestamp()
-        }
-    except Exception as error:
-        response_message = {
-            "type": "error",
-            "sender": "MCP_Server",
-            "payload": {"error": str(error)},
-            "timestamp": current_timestamp()
-        }
-    # Log the interaction for auditing and debugging
-    log_interaction(mcp_message, response_message)
-    return response_message
+        proc = subprocess.run(command, shell=True, capture_output=True, text=True)
+        output = proc.stdout + "\n" + proc.stderr
+        code = proc.returncode
+        if code != 0:
+            output += f"\n[Command exited with non-zero code: {code}]"
+        logger.info(f"[Server] Execution completed. Return code={code}")
+        return output.strip()
+    except Exception as e:
+        logger.exception("Error executing command:")
+        return f"[ERROR] {e}"
 
-# Standalone test for the MCP server:
 if __name__ == "__main__":
-    test_message = {
-        "type": "query",
-        "sender": "MCP_Client",
-        "payload": {"query": "list files"},
-        "timestamp": current_timestamp()
-    }
-    response = process_mcp_message(test_message)
-    print("Test Response:", response)
+    # Start the server on stdio
+    logger.info("Starting MCP server on stdio ...")
+    mcp.run()
+    logger.info("MCP server shut down.")
